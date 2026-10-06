@@ -1,6 +1,7 @@
 output "api_url" {
-  value       = "${aws_apigatewayv2_api.intake.api_endpoint}/intake"
-  description = "POST /intake endpoint."
+  value       = "${aws_api_gateway_stage.default.invoke_url}/intake"
+  description = "WAF-protected POST /intake endpoint."
+  depends_on  = [aws_wafv2_web_acl_association.intake, aws_api_gateway_method_settings.intake, aws_lambda_permission.apigw]
 }
 
 output "intake_table" {
