@@ -99,10 +99,7 @@ resource "aws_s3_bucket_policy" "uploads" {
       Effect    = "Deny"
       Principal = "*"
       Action    = "s3:*"
-      Resource = [
-        aws_s3_bucket.uploads.arn,
-        "${aws_s3_bucket.uploads.arn}/*"
-      ]
+      Resource  = "*"
       Condition = {
         Bool = {
           "aws:SecureTransport" = "false"
@@ -291,27 +288,27 @@ resource "aws_iam_role_policy" "lambda_observability" {
 # Preserve the starter policy's resource address and IAM policy name.
 ######################################################################
 
+data "aws_iam_policy_document" "lambda_data_access" {
+  statement {
+    sid       = "WriteIntakeSubmissions"
+    effect    = "Allow"
+    actions   = ["dynamodb:PutItem"]
+    resources = [aws_dynamodb_table.intake.arn]
+  }
+
+  statement {
+    sid       = "WriteIntakeUploads"
+    effect    = "Allow"
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.uploads.arn}/uploads/*"]
+  }
+}
+
 resource "aws_iam_role_policy" "lambda_inline" {
   name = "intake-data-access"
   role = aws_iam_role.lambda.id
 
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid      = "WriteIntakeSubmissions"
-        Effect   = "Allow"
-        Action   = "dynamodb:PutItem"
-        Resource = aws_dynamodb_table.intake.arn
-      },
-      {
-        Sid      = "WriteIntakeUploads"
-        Effect   = "Allow"
-        Action   = "s3:PutObject"
-        Resource = "${aws_s3_bucket.uploads.arn}/uploads/*"
-      }
-    ]
-  })
+  policy = data.aws_iam_policy_document.lambda_data_access.json
 }
 
 ######################################################################
