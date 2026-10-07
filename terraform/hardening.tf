@@ -347,6 +347,10 @@ resource "aws_iam_role_policy_attachment" "api_logging" {
 resource "aws_api_gateway_account" "logging" {
   cloudwatch_role_arn = aws_iam_role.api_logging.arn
 
+  # AWS provider 5.x requires this to clear the regional logging role
+  # during sandbox teardown. Revisit when upgrading the provider.
+  reset_on_delete = true
+
   depends_on = [aws_iam_role_policy_attachment.api_logging]
 }
 
