@@ -25,3 +25,5 @@ output "vpc_id" {
 output "private_subnet_ids" {
   value = aws_subnet.private[*].id
 }
+
+output "role_arn" { value = aws_iam_role.grc_gate.arn }

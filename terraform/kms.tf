@@ -34,3 +34,20 @@ resource "aws_kms_alias" "intake" {
   name          = "alias/${local.name_prefix}-submissions-${local.suffix}"
   target_key_id = aws_kms_key.intake.key_id
 }
+######################################################################
+# Capstone — Customer-managed key for the evidence vault.
+######################################################################
+
+resource "aws_kms_key" "evidence" {
+  description             = "Customer-managed encryption key for signed capstone evidence"
+  enable_key_rotation     = true
+  deletion_window_in_days = 30
+
+  # The default key policy enables account administration and IAM delegation.
+  tags = { Name = "${local.name_prefix}-evidence-${local.suffix}" }
+}
+
+resource "aws_kms_alias" "evidence" {
+  name          = "alias/${local.name_prefix}-evidence-${local.suffix}"
+  target_key_id = aws_kms_key.evidence.key_id
+}

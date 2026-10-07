@@ -1,0 +1,5 @@
+# Fresh account: create the GitHub OIDC provider.
+existing_github_oidc_provider_arn = null
+
+# If a provider already exists, replace null with its ARN.
+# Reused providers are not deleted during capstone teardown.
