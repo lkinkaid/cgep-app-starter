@@ -27,3 +27,8 @@ output "private_subnet_ids" {
 }
 
 output "role_arn" { value = aws_iam_role.grc_gate.arn }
+
+output "evidence_vault" {
+  description = "Bucket holding signed capstone evidence."
+  value       = aws_s3_bucket.vault.id
+}

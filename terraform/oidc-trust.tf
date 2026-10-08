@@ -57,3 +57,37 @@ resource "aws_iam_role_policy_attachment" "readonly" {
   role       = aws_iam_role.grc_gate.name
   policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
 }
+
+resource "aws_iam_role_policy" "grc_evidence" {
+  name = "upload-capstone-evidence"
+  role = aws_iam_role.grc_gate.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "UploadEvidence"
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:AbortMultipartUpload",
+        ]
+        Resource = "${aws_s3_bucket.vault.arn}/runs/*"
+      },
+      {
+        Sid    = "UseEvidenceEncryptionKey"
+        Effect = "Allow"
+        Action = [
+          "kms:GenerateDataKey",
+          "kms:Decrypt",
+        ]
+        Resource = aws_kms_key.evidence.arn
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "s3.${var.aws_region}.amazonaws.com"
+          }
+        }
+      },
+    ]
+  })
+}
