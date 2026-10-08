@@ -1,0 +1,299 @@
+name: grc-gate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+# Serialize runs so deployments do not overlap.
+concurrency:
+  group: capstone-grc-gate
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  AWS_REGION: us-east-1
+  TF_WORKING_DIR: terraform
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+  # The shared GitHub provider already exists in your AWS account.
+  TF_VAR_existing_github_oidc_provider_arn: arn:aws:iam::420539147061:oidc-provider/token.actions.githubusercontent.com
+
+jobs:
+  grc-gate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare evidence directory
+        run: mkdir -p evidence/capstone evidence/receipts
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.16.4
+          terraform_wrapper: false
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: "v3.1.3"
+
+      - name: Install OPA and Conftest
+        run: |
+          curl -fsSL \
+            https://github.com/open-policy-agent/opa/releases/download/v1.21.1/opa_linux_amd64_static \
+            -o "$RUNNER_TEMP/opa"
+          sudo install -m 0755 "$RUNNER_TEMP/opa" /usr/local/bin/opa
+
+          curl -fsSL \
+            https://github.com/open-policy-agent/conftest/releases/download/v0.71.1/conftest_0.71.1_Linux_x86_64.tar.gz \
+            -o "$RUNNER_TEMP/conftest.tar.gz"
+          tar -xzf "$RUNNER_TEMP/conftest.tar.gz" \
+            -C "$RUNNER_TEMP" conftest
+          sudo install -m 0755 "$RUNNER_TEMP/conftest" /usr/local/bin/conftest
+
+          opa version
+          conftest --version
+
+      - name: Install tfsec
+        run: |
+          curl -fsSL \
+            https://github.com/aquasecurity/tfsec/releases/download/v1.28.14/tfsec-linux-amd64 \
+            -o "$RUNNER_TEMP/tfsec"
+          sudo install -m 0755 "$RUNNER_TEMP/tfsec" /usr/local/bin/tfsec
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v6
+        with:
+          tflint_version: v0.64.0
+
+      - name: Initialize Terraform and TFLint
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          terraform init -input=false
+          tflint --init
+
+      - name: Lint
+        id: lint
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform fmt -check -recursive \
+            2>&1 | tee ../evidence/capstone/terraform-fmt.txt
+
+          tflint --format compact \
+            2>&1 | tee ../evidence/capstone/tflint.txt
+
+      - name: Validate
+        id: validate
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform validate -no-color \
+            2>&1 | tee ../evidence/capstone/terraform-validate.txt
+
+      - name: Plan
+        id: plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform plan -out=tfplan -input=false -no-color \
+            | tee plan.txt
+          terraform show -json tfplan > plan.json
+
+      - name: Policy check
+        id: conftest
+        run: |
+          bash scripts/policy-gate.sh \
+            --workspace "$TF_WORKING_DIR" \
+            --policy policies \
+            --evidence-dir evidence/capstone
+
+      - name: tfsec scan
+        id: tfsec
+        if: ${{ always() && steps.plan.outcome == 'success' }}
+        run: |
+          tfsec "$TF_WORKING_DIR" \
+            --format sarif \
+            --out evidence/capstone/tfsec.sarif || true
+
+          tfsec "$TF_WORKING_DIR" --minimum-severity HIGH
+
+      - name: Copy plan into evidence
+        if: always()
+        run: |
+          for FILE in plan.json plan.txt; do
+            if [[ -f "$TF_WORKING_DIR/$FILE" ]]; then
+              cp "$TF_WORKING_DIR/$FILE" "evidence/capstone/$FILE"
+            fi
+          done
+
+      - name: Configure deployment credentials (OIDC)
+        if: >-
+          ${{ success()
+              && github.event_name == 'push'
+              && github.ref == 'refs/heads/main'
+              && steps.conftest.outcome == 'success'
+              && steps.tfsec.outcome == 'success' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Apply
+        id: apply
+        if: >-
+          ${{ success()
+              && github.event_name == 'push'
+              && github.ref == 'refs/heads/main'
+              && steps.conftest.outcome == 'success'
+              && steps.tfsec.outcome == 'success' }}
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          # Require shared state before allowing CI deployments.
+          if ! jq -e '.backend.type == "s3"' \
+            .terraform/terraform.tfstate >/dev/null 2>&1; then
+            echo "ERROR: Configure the S3 backend before enabling CI apply." >&2
+            exit 2
+          fi
+
+          terraform apply -input=false -no-color tfplan \
+            | tee ../evidence/capstone/apply.txt
+
+      - name: Sign
+        id: sign
+        if: ${{ always() && steps.plan.outcome == 'success' }}
+        env:
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          SHA: ${{ github.sha }}
+          PLAN_STATUS: ${{ steps.plan.outcome }}
+          POLICY_STATUS: ${{ steps.conftest.outcome }}
+          TFSEC_STATUS: ${{ steps.tfsec.outcome }}
+          APPLY_STATUS: ${{ steps.apply.outcome }}
+        run: |
+          jq -n \
+            --arg run_id "$RUN_ID" \
+            --arg run_attempt "$RUN_ATTEMPT" \
+            --arg commit "$SHA" \
+            --arg captured_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg plan "$PLAN_STATUS" \
+            --arg policy "$POLICY_STATUS" \
+            --arg tfsec "$TFSEC_STATUS" \
+            --arg apply "$APPLY_STATUS" \
+            '{
+              run_id: $run_id,
+              run_attempt: $run_attempt,
+              commit: $commit,
+              captured_at_utc: $captured_at,
+              outcomes: {
+                plan: $plan,
+                policy: $policy,
+                tfsec: $tfsec,
+                apply: $apply
+              }
+            }' > evidence/capstone/run.json
+
+          BUNDLE=$(bash scripts/capture-evidence.sh \
+            --workspace "$TF_WORKING_DIR" \
+            --run-id "$RUN_ID" \
+            --run-attempt "$RUN_ATTEMPT" \
+            --commit "$SHA" \
+            --evidence-dir evidence/capstone)
+
+          cosign sign-blob --yes \
+            --bundle "${BUNDLE}.sig.bundle" "$BUNDLE"
+
+          printf 'bundle=%s\n' "$BUNDLE" >> "$GITHUB_OUTPUT"
+
+      - name: Upload
+        id: upload
+        if: ${{ always() && steps.sign.outcome == 'success' }}
+        env:
+          VAULT: ${{ vars.EVIDENCE_VAULT }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          SHA: ${{ github.sha }}
+          BUNDLE: ${{ steps.sign.outputs.bundle }}
+        run: |
+          : "${VAULT:?Set the EVIDENCE_VAULT repository variable}"
+
+          KEY_PREFIX="runs/${RUN_ID}"
+
+          aws s3 cp "$BUNDLE" \
+            "s3://${VAULT}/${KEY_PREFIX}/${BUNDLE}"
+          aws s3 cp "${BUNDLE}.sha256" \
+            "s3://${VAULT}/${KEY_PREFIX}/${BUNDLE}.sha256"
+          aws s3 cp "${BUNDLE}.sig.bundle" \
+            "s3://${VAULT}/${KEY_PREFIX}/${BUNDLE}.sig.bundle"
+
+          VERSION_ID=$(aws s3api head-object \
+            --bucket "$VAULT" \
+            --key "${KEY_PREFIX}/${BUNDLE}" \
+            --query VersionId --output text)
+
+          jq -n \
+            --arg run_id "$RUN_ID" \
+            --arg run_attempt "$RUN_ATTEMPT" \
+            --arg vault "$VAULT" \
+            --arg bundle_key "${KEY_PREFIX}/${BUNDLE}" \
+            --arg version_id "$VERSION_ID" \
+            --arg sha256 "$(cat "${BUNDLE}.sha256")" \
+            --arg commit "$SHA" \
+            '{
+              run_id: $run_id,
+              run_attempt: $run_attempt,
+              vault: $vault,
+              bundle_key: $bundle_key,
+              version_id: $version_id,
+              sha256: $sha256,
+              commit: $commit
+            }' > evidence/receipts/receipt.json
+
+          aws s3 cp evidence/receipts/receipt.json \
+            "s3://${VAULT}/${KEY_PREFIX}/receipt.json"
+
+      - name: Upload evidence artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: grc-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            evidence/capstone/
+            evidence/receipts/
+            evidence-*.tar.gz
+            evidence-*.tar.gz.sha256
+            evidence-*.tar.gz.sig.bundle
+          retention-days: 90
+
+      - name: Enforce gate
+        if: always()
+        env:
+          LINT_STATUS: ${{ steps.lint.outcome }}
+          VALIDATE_STATUS: ${{ steps.validate.outcome }}
+          PLAN_STATUS: ${{ steps.plan.outcome }}
+          POLICY_STATUS: ${{ steps.conftest.outcome }}
+          TFSEC_STATUS: ${{ steps.tfsec.outcome }}
+        run: |
+          [[ "$LINT_STATUS" == "success" ]]
+          [[ "$VALIDATE_STATUS" == "success" ]]
+          [[ "$PLAN_STATUS" == "success" ]]
+          [[ "$POLICY_STATUS" == "success" ]]
+          [[ "$TFSEC_STATUS" == "success" ]]
