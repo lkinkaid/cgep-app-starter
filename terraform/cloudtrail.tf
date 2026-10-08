@@ -1,5 +1,6 @@
 locals {
   trail_name = "${var.project_name}-mgmt"
+  trail_arn  = "arn:aws:cloudtrail:${var.aws_region}:${data.aws_caller_identity.current.account_id}:trail/${var.project_name}-mgmt"
 }
 
 
@@ -13,7 +14,8 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "trail" {
 
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
+      sse_algorithm     = "aws:kms"
+      kms_master_key_id = aws_kms_key.trail.arn
     }
   }
 }
@@ -72,9 +74,13 @@ resource "aws_s3_bucket_policy" "trail" {
 resource "aws_cloudtrail" "mgmt" {
   name                          = local.trail_name
   s3_bucket_name                = aws_s3_bucket.trail.id
+  kms_key_id                    = aws_kms_key.trail.arn
   is_multi_region_trail         = true
   include_global_service_events = true
   enable_log_file_validation    = true
 
-  depends_on = [aws_s3_bucket_policy.trail]
+  depends_on = [
+    aws_s3_bucket_policy.trail,
+    aws_s3_bucket_server_side_encryption_configuration.trail,
+  ]
 }

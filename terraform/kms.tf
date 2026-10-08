@@ -51,3 +51,62 @@ resource "aws_kms_alias" "evidence" {
   name          = "alias/${local.name_prefix}-evidence-${local.suffix}"
   target_key_id = aws_kms_key.evidence.key_id
 }
+
+######################################################################
+# Capstone — Customer-managed key for cloudtrail
+######################################################################
+resource "aws_kms_key" "trail" {
+  description             = "Customer-managed encryption key for CloudTrail logs"
+  enable_key_rotation     = true
+  deletion_window_in_days = 30
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "EnableAccountAdministrationAndIAMDelegation"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      },
+      {
+        Sid    = "AllowCloudTrailEncryption"
+        Effect = "Allow"
+        Principal = {
+          Service = "cloudtrail.amazonaws.com"
+        }
+        Action   = "kms:GenerateDataKey"
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "aws:SourceArn" = local.trail_arn
+          }
+          StringLike = {
+            "kms:EncryptionContext:aws:cloudtrail:arn" = "arn:aws:cloudtrail:*:${data.aws_caller_identity.current.account_id}:trail/${local.trail_name}"
+          }
+        }
+      },
+      {
+        Sid    = "AllowCloudTrailDescribeKey"
+        Effect = "Allow"
+        Principal = {
+          Service = "cloudtrail.amazonaws.com"
+        }
+        Action   = "kms:DescribeKey"
+        Resource = "*"
+      },
+    ]
+  })
+
+  tags = {
+    Name = "${local.name_prefix}-cloudtrail-${local.suffix}"
+  }
+}
+
+resource "aws_kms_alias" "trail" {
+  name          = "alias/${local.name_prefix}-cloudtrail-${local.suffix}"
+  target_key_id = aws_kms_key.trail.key_id
+}

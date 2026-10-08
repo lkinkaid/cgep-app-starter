@@ -206,8 +206,10 @@ resource "aws_security_group" "lambda" {
   tags = { Name = "${local.name_prefix}-lambda-sg" }
 }
 
-# Lambda needs these EC2 permissions to manage its VPC network interfaces.
-# AWS requires Resource = "*" for this execution-role permission set.
+# Scoped scanner exception: AWS documents Resource = "*" for Lambda's
+# six EC2 actions needed to manage VPC network interfaces.
+# https://docs.aws.amazon.com/lambda/latest/dg/configuration-vpc.html
+# tfsec:ignore:aws-iam-no-policy-wildcards
 resource "aws_iam_role_policy" "lambda_vpc" {
   name = "intake-vpc-network-interfaces"
   role = aws_iam_role.lambda.id
