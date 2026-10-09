@@ -7,7 +7,7 @@
 ######################################################################
 
 terraform {
-  required_version = ">= 1.6"
+  required_version = ">= 1.10"
   required_providers {
     aws     = { source = "hashicorp/aws", version = "~> 5.0" }
     random  = { source = "hashicorp/random", version = "~> 3.6" }
@@ -173,6 +173,7 @@ resource "aws_iam_role_policy_attachment" "lambda_basic" {
 
 resource "aws_lambda_function" "intake" {
   function_name    = "${local.name_prefix}-handler-${local.suffix}"
+  description      = "Patient intake API governed by the HIPAA capstone pipeline"
   role             = aws_iam_role.lambda.arn
   handler          = "handler.handler"
   runtime          = "python3.12"
@@ -270,7 +271,11 @@ resource "aws_api_gateway_deployment" "intake" {
       path          = aws_api_gateway_resource.intake.path_part
       method        = aws_api_gateway_method.intake.http_method
       authorization = aws_api_gateway_method.intake.authorization
-      integration   = aws_api_gateway_integration.lambda
+      integration = {
+        type                    = aws_api_gateway_integration.lambda.type
+        integration_http_method = aws_api_gateway_integration.lambda.integration_http_method
+        uri                     = aws_api_gateway_integration.lambda.uri
+      }
     }))
   }
 

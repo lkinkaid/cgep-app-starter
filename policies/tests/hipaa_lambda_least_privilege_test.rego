@@ -472,3 +472,37 @@ test_lambda_unapproved_attachment_fails if {
 	contains(msg, "GAP-07")
 	contains(msg, "aws_iam_role_policy_attachment.lambda_extra")
 }
+
+unchanged_document_input(original) := json.patch(original, [
+	{
+		"op": "add",
+		"path": "/prior_state",
+		"value": {
+			"values": {
+				"root_module": {
+					"resources": [{
+						"address": "data.aws_iam_policy_document.lambda_data_access",
+						"type": "aws_iam_policy_document",
+						"mode": "data",
+						"values": original.resource_changes[0].change.after,
+					}],
+				},
+			},
+		},
+	},
+	{
+		"op": "remove",
+		"path": "/resource_changes/0",
+	},
+])
+
+test_lambda_unchanged_document_passes if {
+	fixture := unchanged_document_input(known_values_input)
+	count(hipaa_lambda_least_privilege.deny) == 0 with input as fixture
+}
+
+test_lambda_unchanged_document_mismatched_policy_fails if {
+	fixture := unchanged_document_input(mismatched_inline_input)
+	some msg in hipaa_lambda_least_privilege.deny with input as fixture
+	contains(msg, "GAP-07")
+}

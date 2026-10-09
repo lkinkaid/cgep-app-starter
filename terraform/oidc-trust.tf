@@ -58,6 +58,25 @@ resource "aws_iam_role_policy_attachment" "readonly" {
   policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
 }
 
+resource "aws_iam_role_policy" "grc_state_lock" {
+  name = "capstone-state-lock"
+  role = aws_iam_role.grc_gate.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid    = "ManageTerraformStateLock"
+      Effect = "Allow"
+      Action = [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+      ]
+      Resource = "arn:aws:s3:::acme-health-intake-tfstate-420539147061/capstone/terraform.tfstate.tflock"
+    }]
+  })
+}
+
 resource "aws_iam_role_policy" "grc_evidence" {
   name = "upload-capstone-evidence"
   role = aws_iam_role.grc_gate.id

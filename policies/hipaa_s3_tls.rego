@@ -62,7 +62,15 @@ uploads_denies_non_tls if {
 	statement.Effect == "Deny"
 	statement.Principal == "*"
 	statement.Action == "s3:*"
-	statement.Resource == "*"
+	bucket_arn := uploads_bucket.change.after.arn
+	is_string(bucket_arn)
+	is_array(statement.Resource)
+	count(statement.Resource) == 2
+
+	{resource | some resource in statement.Resource} == {
+		bucket_arn,
+		sprintf("%s/*", [bucket_arn]),
+	}
 
 	insecure_transport(statement.Condition.Bool["aws:SecureTransport"])
 

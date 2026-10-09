@@ -32,3 +32,7 @@ output "evidence_vault" {
   description = "Bucket holding signed capstone evidence."
   value       = aws_s3_bucket.vault.id
 }
+output "apply_role_arn" {
+  description = "GitHub Actions deployment role for main"
+  value       = aws_iam_role.grc_apply.arn
+}

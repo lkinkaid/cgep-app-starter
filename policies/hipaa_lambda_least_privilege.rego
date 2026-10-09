@@ -18,6 +18,26 @@ data_document := resource if {
 	resource.change.after != null
 }
 
+# An unchanged data source can appear only in the refreshed prior state.
+data_document := {
+	"change": {
+		"after": resource.values,
+		"after_unknown": {},
+	},
+} if {
+	not data_document_has_change
+
+	some resource in input.prior_state.values.root_module.resources
+	resource.address == "data.aws_iam_policy_document.lambda_data_access"
+	resource.type == "aws_iam_policy_document"
+	resource.mode == "data"
+}
+
+data_document_has_change if {
+	some resource in input.resource_changes
+	resource.address == "data.aws_iam_policy_document.lambda_data_access"
+}
+
 inline_policy := resource if {
 	some resource in input.resource_changes
 	resource.address == "aws_iam_role_policy.lambda_inline"
@@ -56,7 +76,9 @@ policy_is_connected if {
 # Existing plans: verify the actual inline JSON matches the checked document.
 policy_document_matches if {
 	is_string(inline_policy.change.after.policy)
-	inline_policy.change.after.policy == data_document.change.after.json
+	is_string(data_document.change.after.json)
+
+	json.unmarshal(inline_policy.change.after.policy) == json.unmarshal(data_document.change.after.json)
 }
 
 # Creation plans: both documents are unknown, with the connection checked above.

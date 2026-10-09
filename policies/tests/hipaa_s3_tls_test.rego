@@ -8,7 +8,10 @@ tls_statement := {
 	"Effect": "Deny",
 	"Principal": "*",
 	"Action": "s3:*",
-	"Resource": "*",
+	"Resource": [
+		"arn:aws:s3:::test-uploads",
+		"arn:aws:s3:::test-uploads/*",
+	],
 	"Condition": {
 		"Bool": {
 			"aws:SecureTransport": "false",
@@ -24,7 +27,7 @@ tls_plan(statement) := {
 			"mode": "managed",
 			"change": {
 				"actions": ["create"],
-				"after": {},
+				"after": {"arn": "arn:aws:s3:::test-uploads"},
 				"after_unknown": {"id": true},
 			},
 		},
@@ -159,4 +162,18 @@ test_uploads_tls_wrong_bucket_fails if {
 	some msg in hipaa_s3_tls.deny with input as wrong_bucket_input
 	contains(msg, "GAP-03")
 	contains(msg, "aws_s3_bucket.uploads")
+}
+
+test_uploads_tls_wildcard_resource_fails if {
+	fixture := tls_plan(object.union(tls_statement, {"Resource": "*"}))
+	some msg in hipaa_s3_tls.deny with input as fixture
+	contains(msg, "GAP-03")
+}
+
+test_uploads_tls_objects_only_fails if {
+	fixture := tls_plan(object.union(tls_statement, {
+		"Resource": ["arn:aws:s3:::test-uploads/*"],
+	}))
+	some msg in hipaa_s3_tls.deny with input as fixture
+	contains(msg, "GAP-03")
 }
