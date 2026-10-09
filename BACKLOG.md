@@ -106,8 +106,10 @@ check; enhanced summaries are deferred.
 
 ## Engineering hygiene: Bootstrap ownership and validation
 
-- [ ] Complete the prepared backend adoption imports after reviewing a fresh
-      plan; confirm a follow-up no-change plan and securely back up local state.
+- [x] Complete the capstone backend adoption imports: five resources imported
+      with no infrastructure changes; follow-up plan reports no changes.
+- [ ] Securely back up the local bootstrap state and retain it for future
+      management and teardown.
 - [ ] Reconcile the prepared previous-lab inline-policy import in its owning
       repository and state; avoid duplicate resource ownership.
 - [x] Commit the capstone bootstrap configuration and provider lock files,
@@ -120,8 +122,9 @@ check; enhanced summaries are deferred.
       so they are distinguishable from current policy-suite results.
 
 Current baseline: the capstone bootstrap configuration and lock files are
-committed on `main`. Import blocks prepare adoption; ownership is not recorded
-until imports are applied. Bootstrap CI validation remains deferred.
+committed on `main`. The state bucket and its four configuration resources
+were imported into the separate local bootstrap state on 2026-10-09; the
+follow-up plan reports no changes. Bootstrap CI validation remains deferred.
 Required secret exclusion, reproducibility, and AI transparency remain
 submission checks.
 
