@@ -18,6 +18,19 @@ complete. Required policy gating, branch protection, control mappings,
 reproducible delivery, and submission requirements remain completion checks;
 listing related enhancements here does not waive those requirements.
 
+### Submission completion checks
+
+These checks stay in the capstone scope and are not post-capstone stretch work.
+
+- [ ] Complete and validate the OSCAL component and profile, including control
+      mappings, resource addresses, and verified signed evidence references.
+- [ ] Finish the README verification instructions, WRITEUP, and AI transparency
+      disclosure; explain implementation decisions and remaining limitations.
+- [ ] Resolve repository licensing and retain applicable starter attribution
+      before submission.
+- [ ] Verify required branch protection and review the repository and its
+      history for exposed secrets before submission.
+
 ## GAP-05: Network regression coverage
 
 - [ ] Add policy checks for Lambda private-subnet and security-group attachment,
@@ -93,19 +106,25 @@ check; enhanced summaries are deferred.
 
 ## Engineering hygiene: Bootstrap ownership and validation
 
-- [ ] Complete the prepared backend adoption imports after reviewing a fresh
-      plan; confirm a follow-up no-change plan and securely back up local state.
+- [x] Complete the capstone backend adoption imports: five resources imported
+      with no infrastructure changes; follow-up plan reports no changes.
+- [ ] Securely back up the local bootstrap state and retain it for future
+      management and teardown.
 - [ ] Reconcile the prepared previous-lab inline-policy import in its owning
       repository and state; avoid duplicate resource ownership.
-- [ ] Commit the reviewed bootstrap configuration and provider lock files in
-      their appropriate repositories, with generated plans and state excluded.
+- [x] Commit the capstone bootstrap configuration and provider lock files,
+      with generated plans and state excluded (PRs #4 and #6).
+- [ ] Review and commit the separate previous-lab adoption configuration and
+      applicable provider lock file in its owning repository.
 - [ ] Add formatting and validation checks for the bootstrap Terraform root
       without importing or applying resources from CI.
 - [ ] Clarify historical bootstrap test counts in `terraform/CI_PERMISSIONS.md`
       so they are distinguishable from current policy-suite results.
 
-Current baseline: adoption resource and import blocks are prepared; ownership
-is not recorded until imports are applied. Bootstrap automation is deferred.
+Current baseline: the capstone bootstrap configuration and lock files are
+committed on `main`. The state bucket and its four configuration resources
+were imported into the separate local bootstrap state on 2026-10-09; the
+follow-up plan reports no changes. Bootstrap CI validation remains deferred.
 Required secret exclusion, reproducibility, and AI transparency remain
 submission checks.
 
@@ -120,3 +139,56 @@ submission checks.
 Current baseline: policy metadata and Terraform comments provide traceability.
 Required OSCAL mappings and final documentation remain in the capstone scope;
 the supplemental index and its automation are deferred.
+
+## Security scanning: Checkov integration
+
+- [ ] Add a pinned Checkov version to the GRC workflow to scan the workload
+      Terraform configuration after capstone completion.
+- [ ] Review findings alongside tfsec and the existing Rego policies; select
+      the checks that should block deployment and document any justified
+      suppressions with their control context.
+- [ ] Review existing tfsec suppressions and the HIGH severity gate threshold;
+      document exception rationale, affected controls, and compensating controls.
+- [ ] Include Checkov reports and scan outcomes in the signed evidence bundle
+      and final gate enforcement.
+- [ ] Demonstrate that a selected failing check blocks deployment and that
+      the remediated configuration passes. Scanner errors must fail the check.
+
+Current baseline: the workflow uses Terraform formatting and validation,
+TFLint, OPA/Conftest, and tfsec. Checkov integration is deferred until after
+Layer 4 and capstone completion.
+
+## Infrastructure quality: Reusable Terraform modules
+
+- [ ] Evaluate cohesive module boundaries and document their inputs, outputs,
+      and responsibilities before refactoring the workload root.
+- [ ] Preserve resource ownership through reviewed address migrations; require
+      a plan with no unintended resource replacement or configuration changes.
+- [ ] Update address-dependent policies, tests, and OSCAL mappings together
+      and verify the existing policy gate still passes.
+
+Current baseline: the workload uses a root module with lab-style comments.
+Module extraction is deferred until after capstone completion.
+
+## Engineering hygiene: Workflow dependency integrity
+
+- [ ] Pin GitHub Actions to verified full commit SHAs, retaining readable
+      version comments alongside the pins.
+- [ ] Verify directly downloaded tool binaries against trusted release
+      checksums or signatures and fail installation when verification fails.
+- [ ] Document a repeatable dependency-update and verification procedure.
+
+Current baseline: provider lock files and tool versions are pinned; Actions
+mostly use version tags. Additional dependency-integrity work is deferred.
+
+## Evidence automation: Early failure coverage
+
+- [ ] Capture lint, validation, and plan outcomes and available diagnostics
+      when the pipeline fails before producing a saved plan.
+- [ ] Extend signing and upload to useful failure evidence without requiring
+      a successful plan or presenting absent plan results as successful checks.
+- [ ] Demonstrate controlled lint, validation, and plan failures; confirm
+      deployment stays blocked and failure evidence can be verified.
+
+Current baseline: signing requires a successful plan. Policy-denial and apply
+failure evidence is already preserved; earlier failure coverage is deferred.
