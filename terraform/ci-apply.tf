@@ -1,3 +1,6 @@
+# Step 1: Limit deployment federation to this repository on main
+# terraform/ci-apply.tf
+
 resource "aws_iam_role" "grc_apply" {
   name = "${var.project_name}-grc-apply"
 
@@ -23,11 +26,16 @@ resource "aws_iam_role" "grc_apply" {
     }]
   })
 }
+# Account-wide reads support Terraform refresh; maintenance writes below
+# are separately scoped to the existing capstone resources.
 resource "aws_iam_role_policy_attachment" "grc_apply_readonly" {
   role       = aws_iam_role.grc_apply.name
   policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
 }
 
+# Step 2: Save state, coordinate the lock, and upload signed run evidence
+# State writes use one object key; only the temporary lock can be deleted.
+# Evidence uploads use runs/ and the evidence key through S3.
 resource "aws_iam_role_policy" "grc_apply_state_evidence" {
   name = "capstone-state-and-evidence"
   role = aws_iam_role.grc_apply.id
@@ -80,6 +88,8 @@ resource "aws_iam_role_policy" "grc_apply_state_evidence" {
     ]
   })
 }
+# Step 3: Pass only the two runtime roles to their intended AWS services
+# PassRole does not itself let CI assume either runtime role.
 resource "aws_iam_role_policy" "grc_apply_pass_roles" {
   name = "pass-capstone-runtime-roles"
   role = aws_iam_role.grc_apply.id
@@ -113,6 +123,9 @@ resource "aws_iam_role_policy" "grc_apply_pass_roles" {
   })
 }
 
+# Step 4: Maintain the existing intake function
+# Code, configuration, invocation policy, concurrency, and tags may change.
+# Creating or replacing the function requires local bootstrap permissions.
 resource "aws_iam_role_policy" "grc_apply_lambda_update" {
   name = "update-capstone-lambda"
   role = aws_iam_role.grc_apply.id
@@ -138,6 +151,7 @@ resource "aws_iam_role_policy" "grc_apply_lambda_update" {
   })
 }
 
+# Step 5: Define maintenance permissions by service area
 # Bootstrap these attachments with the local deployment principal. The apply
 # role deliberately cannot administer itself, the plan role, or shared OIDC.
 # Separate managed policies avoid the aggregate 10,240-byte inline-role limit.
@@ -154,6 +168,8 @@ locals {
   ], aws_subnet.private[*].arn, aws_subnet.public[*].arn)
 
   ci_maintenance_policies = {
+    # Maintain existing buckets, submissions, and keys. Rotation and bucket
+    # policy changes still require review because they can weaken protections.
     storage = {
       Version = "2012-10-17"
       Statement = [
@@ -220,6 +236,8 @@ locals {
         },
       ]
     }
+    # Maintain the existing API and network. The API child wildcard permits
+    # new deployment/resource IDs within this API, not other REST APIs.
     api_network = {
       Version = "2012-10-17"
       Statement = [
@@ -271,6 +289,9 @@ locals {
         },
       ]
     }
+    # Runtime inline-policy changes delegate workload permissions. The Lambda
+    # policy gate checks approved contents; IAM itself does not constrain JSON.
+    # CloudTrail event-selector changes likewise require explicit review.
     runtime_audit = {
       Version = "2012-10-17"
       Statement = [
@@ -334,6 +355,9 @@ resource "aws_iam_policy" "grc_apply_maintenance" {
   policy      = jsonencode(each.value)
 }
 
+# Step 6: Attach the reviewed maintenance policies during local bootstrap
+# CI cannot update these deployment policies or administer either CI role.
+# See CI_PERMISSIONS.md for supported maintenance and verification limits.
 resource "aws_iam_role_policy_attachment" "grc_apply_maintenance" {
   for_each = local.ci_maintenance_policies
 

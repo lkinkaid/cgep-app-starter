@@ -1,7 +1,12 @@
+# Step 1: Apply the workload protections identified in GAPS.md
+# terraform/hardening.tf
+
 ######################################################################
 # GAP-01 — Encrypt uploads with a customer-managed KMS key.
 ######################################################################
 
+# GAP-01 / HIPAA 164.312(a)(2)(iv): default new uploads to the
+# customer-managed key defined in kms.tf.
 resource "aws_s3_bucket_server_side_encryption_configuration" "uploads" {
   bucket = aws_s3_bucket.uploads.id
 
@@ -89,6 +94,9 @@ resource "aws_iam_role_policy" "lambda_intake_kms" {
 # GAP-03 — Deny non-TLS access to the uploads bucket and its objects.
 ######################################################################
 
+# Step 2: Enforce transport protection and preserve upload versions
+# GAP-03 / HIPAA 164.312(e)(1): deny non-TLS requests at both
+# bucket and object scope, including callers with other Allow policies.
 resource "aws_s3_bucket_policy" "uploads" {
   bucket = aws_s3_bucket.uploads.id
 
@@ -116,6 +124,8 @@ resource "aws_s3_bucket_policy" "uploads" {
 # GAP-04 — Preserve previous upload versions for recovery after overwrites.
 ######################################################################
 
+# GAP-04 / HIPAA 164.308(a)(7): preserve earlier object versions.
+# Versioning supports recovery but does not make those versions immutable.
 resource "aws_s3_bucket_versioning" "uploads" {
   bucket = aws_s3_bucket.uploads.id
 
@@ -130,6 +140,9 @@ resource "aws_s3_bucket_versioning" "uploads" {
 ######################################################################
 
 # Private subnets share a route table with no internet default route.
+# Step 3: Route Lambda data-store traffic through gateway endpoints
+# GAP-05: the baseline is already configured; additional regression
+# policies and connectivity tests are post-capstone work in BACKLOG.md.
 resource "aws_route_table" "private" {
   vpc_id = aws_vpc.main.id
 
@@ -166,6 +179,8 @@ resource "aws_vpc_endpoint" "s3" {
   tags = { Name = "${local.name_prefix}-s3-endpoint" }
 }
 
+# Pair the DynamoDB service route with a policy allowing this Lambda role
+# to write only the submissions table; runtime IAM must also allow the call.
 resource "aws_vpc_endpoint" "dynamodb" {
   vpc_id            = aws_vpc.main.id
   service_name      = "com.amazonaws.${var.aws_region}.dynamodb"
@@ -251,6 +266,9 @@ resource "aws_cloudwatch_log_group" "lambda" {
   tags = { Name = "${local.name_prefix}-lambda-logs" }
 }
 
+# Step 4: Configure failure retention and runtime telemetry
+# GAP-06: retain asynchronous failures for 14 days with SQS-managed
+# encryption. Further failure-path testing is tracked in BACKLOG.md.
 resource "aws_sqs_queue" "intake_dlq" {
   name                      = "${local.name_prefix}-dlq-${local.suffix}"
   message_retention_seconds = 1209600 # 14 days for investigation and recovery.
@@ -293,6 +311,10 @@ resource "aws_iam_role_policy" "lambda_observability" {
 # Preserve the starter policy's resource address and IAM policy name.
 ######################################################################
 
+# Step 5: Restrict handler data access to its two write operations
+# GAP-07 / HIPAA 164.312(a)(1): use exact table and upload-prefix
+# resources. The Rego gate also checks supporting policies and attachments.
+# Preserve that required gate; further IAM hardening is in BACKLOG.md.
 data "aws_iam_policy_document" "lambda_data_access" {
   statement {
     sid       = "WriteIntakeSubmissions"
@@ -320,6 +342,9 @@ resource "aws_iam_role_policy" "lambda_inline" {
 # GAP-08 — API access logs, throttling, and Regional WAF protection.
 ######################################################################
 
+# Step 6: Add API audit records and request controls
+# GAP-08 / HIPAA 164.312(b): retain the metadata access records
+# emitted by the prod stage for 90 days.
 resource "aws_cloudwatch_log_group" "api_access" {
   name              = "/aws/apigateway/${local.name_prefix}-${local.suffix}/access"
   retention_in_days = 90
@@ -348,14 +373,11 @@ resource "aws_iam_role_policy_attachment" "api_logging" {
 
 resource "aws_api_gateway_account" "logging" {
   cloudwatch_role_arn = aws_iam_role.api_logging.arn
-
-  # AWS provider 5.x requires this to clear the regional logging role
-  # during sandbox teardown. Revisit when upgrading the provider.
-  reset_on_delete = true
-
-  depends_on = [aws_iam_role_policy_attachment.api_logging]
+  depends_on          = [aws_iam_role_policy_attachment.api_logging]
 }
 
+# Keep metrics and throttling enabled across the stage while disabling
+# execution logs and data tracing to avoid logging request bodies.
 resource "aws_api_gateway_method_settings" "intake" {
   rest_api_id = aws_api_gateway_rest_api.intake.id
   stage_name  = aws_api_gateway_stage.default.stage_name
@@ -370,6 +392,8 @@ resource "aws_api_gateway_method_settings" "intake" {
   }
 }
 
+# Managed rules filter known bad inputs and SQL injection patterns; the
+# IP rate rule blocks excessive requests. Unmatched traffic is allowed.
 resource "aws_wafv2_web_acl" "intake" {
   name        = "${local.name_prefix}-api-${local.suffix}"
   description = "Protect the patient intake REST API"
@@ -453,6 +477,7 @@ resource "aws_wafv2_web_acl" "intake" {
   }
 }
 
+# Attach the web ACL to the deployed stage so its rules protect the endpoint.
 resource "aws_wafv2_web_acl_association" "intake" {
   resource_arn = aws_api_gateway_stage.default.arn
   web_acl_arn  = aws_wafv2_web_acl.intake.arn

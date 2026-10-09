@@ -1,3 +1,6 @@
+# Step 1: Define the workload and its resource relationships
+# terraform/main.tf
+
 ######################################################################
 # Acme Health — Patient Intake API (CGE-P Capstone Starter)
 #
@@ -15,6 +18,8 @@ terraform {
   }
 }
 
+# Configuration settings: default tags identify the PHI workload on
+# resources that support tagging; tags provide context, not access control.
 provider "aws" {
   region = var.aws_region
 
@@ -28,6 +33,7 @@ provider "aws" {
   }
 }
 
+# Keep a stable suffix in Terraform state to distinguish sandbox resources.
 resource "random_id" "suffix" {
   byte_length = 4
 }
@@ -42,6 +48,7 @@ locals {
 # Two public + two private subnets across two AZs.
 ######################################################################
 
+# Step 2: Place the network across two available zones
 data "aws_availability_zones" "available" {
   state = "available"
 }
@@ -54,6 +61,8 @@ resource "aws_vpc" "main" {
   tags = { Name = "${local.name_prefix}-vpc" }
 }
 
+# Public routing is supplied by the internet gateway below. Instances do
+# not receive public IPv4 addresses automatically in these subnets.
 resource "aws_subnet" "public" {
   count                   = 2
   vpc_id                  = aws_vpc.main.id
@@ -64,6 +73,7 @@ resource "aws_subnet" "public" {
   tags = { Name = "${local.name_prefix}-public-${count.index}" }
 }
 
+# Lambda uses these private subnets; service routes are in hardening.tf.
 resource "aws_subnet" "private" {
   count             = 2
   vpc_id            = aws_vpc.main.id
@@ -79,6 +89,7 @@ resource "aws_internet_gateway" "main" {
   tags = { Name = "${local.name_prefix}-igw" }
 }
 
+# This internet route belongs to the public subnets, not the Lambda subnets.
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
 
@@ -101,6 +112,9 @@ resource "aws_route_table_association" "public" {
 # GAP-02: remediated with a customer-managed KMS key in kms.tf.
 ######################################################################
 
+# Step 3: Provision the handler data stores
+# GAP-02 / HIPAA 164.312(a)(2)(iv): reference the submissions CMK
+# directly so the plan records the intended encryption relationship.
 resource "aws_dynamodb_table" "intake" {
   name         = "${local.name_prefix}-submissions-${local.suffix}"
   billing_mode = "PAY_PER_REQUEST"
@@ -127,6 +141,8 @@ resource "aws_dynamodb_table" "intake" {
 # GAP-04: remediated by enabling bucket versioning in hardening.tf.
 ######################################################################
 
+# Sandbox cleanup: force_destroy permits object removal during teardown.
+# Upload versioning supports recovery; this bucket is not the evidence vault.
 resource "aws_s3_bucket" "uploads" {
   bucket = "${local.name_prefix}-uploads-${local.suffix}"
 
@@ -145,12 +161,16 @@ resource "aws_s3_bucket" "uploads" {
 # GAP-07: workload data access is restricted to handler writes in hardening.tf.
 ######################################################################
 
+# Step 4: Package the handler and assign its runtime identity
+# The package hash lets Terraform detect changes to the handler source.
 data "archive_file" "handler" {
   type        = "zip"
   source_file = "${path.module}/lambda/handler.py"
   output_path = "${path.module}/lambda/handler.zip"
 }
 
+# Trust permits the Lambda service to assume this workload role. Data,
+# networking, encryption, and telemetry permissions are attached separately.
 resource "aws_iam_role" "lambda" {
   name = "${local.name_prefix}-lambda-${local.suffix}"
 
@@ -164,6 +184,8 @@ resource "aws_iam_role" "lambda" {
   })
 }
 
+# The basic execution policy supplies CloudWatch logging permissions;
+# it does not supply the handler data-store permissions.
 resource "aws_iam_role_policy_attachment" "lambda_basic" {
   role       = aws_iam_role.lambda.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
@@ -233,6 +255,7 @@ resource "aws_lambda_function" "intake" {
 # REST API is used because HTTP APIs do not support direct WAF association.
 ######################################################################
 
+# Step 5: Publish the Regional REST API and connect it to Lambda
 resource "aws_api_gateway_rest_api" "intake" {
   name = "${local.name_prefix}-api-${local.suffix}"
 
@@ -247,6 +270,8 @@ resource "aws_api_gateway_resource" "intake" {
   path_part   = "intake"
 }
 
+# The sandbox exposes POST /intake without an authorizer. WAF filters
+# requests; it does not authenticate patients or establish their identity.
 resource "aws_api_gateway_method" "intake" {
   rest_api_id   = aws_api_gateway_rest_api.intake.id
   resource_id   = aws_api_gateway_resource.intake.id
@@ -254,6 +279,7 @@ resource "aws_api_gateway_method" "intake" {
   authorization = "NONE"
 }
 
+# Proxy integration forwards the request to the existing intake handler.
 resource "aws_api_gateway_integration" "lambda" {
   rest_api_id             = aws_api_gateway_rest_api.intake.id
   resource_id             = aws_api_gateway_resource.intake.id
@@ -263,6 +289,8 @@ resource "aws_api_gateway_integration" "lambda" {
   uri                     = aws_lambda_function.intake.invoke_arn
 }
 
+# Changes to the listed API settings trigger a fresh deployment snapshot.
+# Create the new snapshot before removing the previous deployment.
 resource "aws_api_gateway_deployment" "intake" {
   rest_api_id = aws_api_gateway_rest_api.intake.id
 
@@ -307,6 +335,7 @@ resource "aws_api_gateway_stage" "default" {
   depends_on = [aws_api_gateway_account.logging]
 }
 
+# Restrict API Gateway invocation to this API, prod stage, method, and path.
 resource "aws_lambda_permission" "apigw" {
   statement_id  = "AllowAPIGatewayInvoke"
   action        = "lambda:InvokeFunction"

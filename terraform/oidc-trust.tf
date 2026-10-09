@@ -1,3 +1,6 @@
+# Step 1: Configure GitHub federation for the plan gate
+# terraform/oidc-trust.tf
+
 # Create a provider only when an existing ARN was not supplied.
 resource "aws_iam_openid_connect_provider" "github" {
   count = var.existing_github_oidc_provider_arn == null ? 1 : 0
@@ -29,6 +32,9 @@ locals {
   )
 }
 
+# Step 2: Allow repository runs to plan without workload mutation rights
+# The subject patterns cover repository contexts including pull requests.
+# The audience must be STS; deployment on main uses the separate apply role.
 resource "aws_iam_role" "grc_gate" {
   name = "${var.project_name}-grc-plan"
 
@@ -53,11 +59,15 @@ resource "aws_iam_role" "grc_gate" {
   })
 }
 
+# AWS ReadOnlyAccess is account-wide. The write exceptions below cover
+# the state lock and evidence upload, not workload deployment.
 resource "aws_iam_role_policy_attachment" "readonly" {
   role       = aws_iam_role.grc_gate.name
   policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
 }
 
+# Step 3: Permit the temporary S3 state lock used during planning
+# DeleteObject is scoped to the lockfile, not the Terraform state object.
 resource "aws_iam_role_policy" "grc_state_lock" {
   name = "capstone-state-lock"
   role = aws_iam_role.grc_gate.id
@@ -77,6 +87,9 @@ resource "aws_iam_role_policy" "grc_state_lock" {
   })
 }
 
+# Step 4: Preserve evidence from both passing and failing gate runs
+# Uploads are confined to runs/ in the vault; key use must pass through S3.
+# These permissions do not grant retention bypass or evidence deletion.
 resource "aws_iam_role_policy" "grc_evidence" {
   name = "upload-capstone-evidence"
   role = aws_iam_role.grc_gate.id
