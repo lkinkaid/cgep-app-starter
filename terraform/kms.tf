@@ -1,0 +1,112 @@
+######################################################################
+# GAP-01 — Encrypt uploads with a customer-managed KMS key.
+######################################################################
+
+resource "aws_kms_key" "uploads" {
+  description             = "Customer-managed encryption key for patient intake uploads"
+  enable_key_rotation     = true
+  deletion_window_in_days = 30
+
+  # The default KMS key policy enables this account to administer the key
+  # and delegate use through IAM policies, including the Lambda policy in hardening.tf.
+  tags = { Name = "${local.name_prefix}-uploads-${local.suffix}" }
+}
+
+resource "aws_kms_alias" "uploads" {
+  name          = "alias/${local.name_prefix}-uploads-${local.suffix}"
+  target_key_id = aws_kms_key.uploads.key_id
+}
+
+######################################################################
+# GAP-02 — Customer-managed key for the submissions table.
+######################################################################
+
+resource "aws_kms_key" "intake" {
+  description             = "Customer-managed encryption key for patient intake submissions"
+  enable_key_rotation     = true
+  deletion_window_in_days = 30
+
+  # The default key policy enables account administration and IAM delegation.
+  tags = { Name = "${local.name_prefix}-submissions-${local.suffix}" }
+}
+
+resource "aws_kms_alias" "intake" {
+  name          = "alias/${local.name_prefix}-submissions-${local.suffix}"
+  target_key_id = aws_kms_key.intake.key_id
+}
+######################################################################
+# Capstone — Customer-managed key for the evidence vault.
+######################################################################
+
+resource "aws_kms_key" "evidence" {
+  description             = "Customer-managed encryption key for signed capstone evidence"
+  enable_key_rotation     = true
+  deletion_window_in_days = 30
+
+  # The default key policy enables account administration and IAM delegation.
+  tags = { Name = "${local.name_prefix}-evidence-${local.suffix}" }
+}
+
+resource "aws_kms_alias" "evidence" {
+  name          = "alias/${local.name_prefix}-evidence-${local.suffix}"
+  target_key_id = aws_kms_key.evidence.key_id
+}
+
+######################################################################
+# Capstone — Customer-managed key for cloudtrail
+######################################################################
+resource "aws_kms_key" "trail" {
+  description             = "Customer-managed encryption key for CloudTrail logs"
+  enable_key_rotation     = true
+  deletion_window_in_days = 30
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "EnableAccountAdministrationAndIAMDelegation"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      },
+      {
+        Sid    = "AllowCloudTrailEncryption"
+        Effect = "Allow"
+        Principal = {
+          Service = "cloudtrail.amazonaws.com"
+        }
+        Action   = "kms:GenerateDataKey"
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "aws:SourceArn" = local.trail_arn
+          }
+          StringLike = {
+            "kms:EncryptionContext:aws:cloudtrail:arn" = "arn:aws:cloudtrail:*:${data.aws_caller_identity.current.account_id}:trail/${local.trail_name}"
+          }
+        }
+      },
+      {
+        Sid    = "AllowCloudTrailDescribeKey"
+        Effect = "Allow"
+        Principal = {
+          Service = "cloudtrail.amazonaws.com"
+        }
+        Action   = "kms:DescribeKey"
+        Resource = "*"
+      },
+    ]
+  })
+
+  tags = {
+    Name = "${local.name_prefix}-cloudtrail-${local.suffix}"
+  }
+}
+
+resource "aws_kms_alias" "trail" {
+  name          = "alias/${local.name_prefix}-cloudtrail-${local.suffix}"
+  target_key_id = aws_kms_key.trail.key_id
+}

@@ -1,13 +1,13 @@
 ######################################################################
 # Acme Health — Patient Intake API (CGE-P Capstone Starter)
 #
-# This is the workload your capstone repo wraps with GRC controls.
-# It is INTENTIONALLY non-compliant. See GAPS.md for the named flaws
-# your Rego policies + Terraform overrides are expected to remediate.
+# This starter workload is hardened with the controls in hardening.tf
+# and the customer-managed keys in kms.tf. See GAPS.md for the original
+# gaps these Terraform resources remediate.
 ######################################################################
 
 terraform {
-  required_version = ">= 1.6"
+  required_version = ">= 1.10"
   required_providers {
     aws     = { source = "hashicorp/aws", version = "~> 5.0" }
     random  = { source = "hashicorp/random", version = "~> 3.6" }
@@ -38,7 +38,7 @@ locals {
 }
 
 ######################################################################
-# Networking — VPC the learner is expected to put the Lambda inside.
+# Networking — Starter VPC used by Lambda in the private subnets.
 # Two public + two private subnets across two AZs.
 ######################################################################
 
@@ -59,7 +59,7 @@ resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "10.42.${count.index}.0/24"
   availability_zone       = data.aws_availability_zones.available.names[count.index]
-  map_public_ip_on_launch = true
+  map_public_ip_on_launch = false
 
   tags = { Name = "${local.name_prefix}-public-${count.index}" }
 }
@@ -98,7 +98,7 @@ resource "aws_route_table_association" "public" {
 
 ######################################################################
 # DynamoDB — submissions table.
-# GAP-02: encryption uses AWS-owned default, not a CMK you control.
+# GAP-02: remediated with a customer-managed KMS key in kms.tf.
 ######################################################################
 
 resource "aws_dynamodb_table" "intake" {
@@ -111,36 +111,38 @@ resource "aws_dynamodb_table" "intake" {
     type = "S"
   }
 
-  # No server_side_encryption block. Defaults to AWS-owned key.
-  # GAP-02: capstone learner expected to add this with a customer-owned key.
+  # GAP-02: use the customer-managed key defined in kms.tf.
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.intake.arn
+  }
 }
 
 ######################################################################
 # S3 — uploads bucket.
-# GAP-01: relies on AWS-managed SSE-S3 (default since 2023) instead of
-#         SSE-KMS with a customer CMK. PHI keys are not under customer
-#         custody.
-# GAP-03: no bucket policy denying non-TLS requests
-#         (aws:SecureTransport).
-# GAP-04: no versioning. PHI overwrites are unrecoverable.
-#
-# Note: AWS now defaults new buckets to SSE-S3 + full public access block.
-# The "gaps" here are real residual gaps once those defaults are in place.
+# GAP-01: remediated by the SSE-KMS configuration in hardening.tf,
+#         using aws_kms_key.uploads defined in kms.tf.
+# GAP-03: remediated by the TLS-enforcing bucket policy in hardening.tf
+#         (denies requests when aws:SecureTransport is false).
+# GAP-04: remediated by enabling bucket versioning in hardening.tf.
 ######################################################################
 
 resource "aws_s3_bucket" "uploads" {
   bucket = "${local.name_prefix}-uploads-${local.suffix}"
+
+  # Sandbox teardown convenience: allow Terraform to delete all objects,
+  # versions, and delete markers when destroying this bucket.
+  force_destroy = true
 }
 
-# (Intentionally omitted: SSE-KMS encryption with a customer CMK,
-#  bucket policy enforcing aws:SecureTransport, versioning, lifecycle.
-#  These are the gaps the learner closes.)
+# Default SSE-KMS encryption, Lambda's KMS upload permission, TLS
+# enforcement, public access blocking, and versioning are in hardening.tf.
 
 ######################################################################
 # Lambda — the intake handler.
-# GAP-05: not deployed inside the VPC.
-# GAP-06: no reserved concurrency, no DLQ, no X-Ray.
-# GAP-07: IAM role has dynamodb:* and s3:* on the resources (over-broad).
+# GAP-05: remediated using the existing VPC and networking in hardening.tf.
+# GAP-06: reserved concurrency, async DLQ, and active X-Ray tracing configured.
+# GAP-07: workload data access is restricted to handler writes in hardening.tf.
 ######################################################################
 
 data "archive_file" "handler" {
@@ -167,30 +169,11 @@ resource "aws_iam_role_policy_attachment" "lambda_basic" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# GAP-07: deliberately broad permissions on the workload data stores.
-resource "aws_iam_role_policy" "lambda_inline" {
-  name = "intake-data-access"
-  role = aws_iam_role.lambda.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = "dynamodb:*"
-        Resource = aws_dynamodb_table.intake.arn
-      },
-      {
-        Effect   = "Allow"
-        Action   = "s3:*"
-        Resource = ["${aws_s3_bucket.uploads.arn}", "${aws_s3_bucket.uploads.arn}/*"]
-      }
-    ]
-  })
-}
+# GAP-07: the least-privilege lambda_inline policy is defined in hardening.tf.
 
 resource "aws_lambda_function" "intake" {
   function_name    = "${local.name_prefix}-handler-${local.suffix}"
+  description      = "Patient intake API governed by the HIPAA capstone pipeline"
   role             = aws_iam_role.lambda.arn
   handler          = "handler.handler"
   runtime          = "python3.12"
@@ -205,39 +188,123 @@ resource "aws_lambda_function" "intake" {
     }
   }
 
-  # GAP-05: no vpc_config block. Learner expected to add one referencing
-  # aws_subnet.private[*] and a hardened security group.
+  # GAP-06: cap parallel executions at 10 for this sandbox workload.
+  reserved_concurrent_executions = 10
+
+  # Lambda DLQs retain failed asynchronous events. API Gateway invokes
+  # synchronously, so API failures return to the caller instead of this queue.
+  dead_letter_config {
+    target_arn = aws_sqs_queue.intake_dlq.arn
+  }
+
+  tracing_config {
+    mode = "Active"
+  }
+
+  # GAP-05: use the starter's private subnets and restricted security group.
+  vpc_config {
+    subnet_ids         = aws_subnet.private[*].id
+    security_group_ids = [aws_security_group.lambda.id]
+  }
+
+  # IAM policies, endpoint routes, S3 protections, and the log group must
+  # be ready before the handler runs.
+  depends_on = [
+    aws_iam_role_policy_attachment.lambda_basic,
+    aws_iam_role_policy.lambda_inline,
+    aws_iam_role_policy.lambda_vpc,
+    aws_iam_role_policy.lambda_observability,
+    aws_iam_role_policy.lambda_uploads_kms,
+    aws_iam_role_policy.lambda_intake_kms,
+    aws_route_table_association.private,
+    aws_vpc_endpoint.s3,
+    aws_vpc_endpoint.dynamodb,
+    aws_s3_bucket_server_side_encryption_configuration.uploads,
+    aws_s3_bucket_policy.uploads,
+    aws_s3_bucket_versioning.uploads,
+    aws_s3_bucket_public_access_block.uploads,
+    aws_cloudwatch_log_group.lambda
+  ]
 }
 
 ######################################################################
-# API Gateway — HTTP API in front of the Lambda.
-# GAP-08: no access logging, no throttling, no WAF.
+# API Gateway — Regional REST API in front of the existing Lambda.
+# GAP-08: access logs, throttling, and a directly associated WAF web ACL.
+# REST API is used because HTTP APIs do not support direct WAF association.
 ######################################################################
 
-resource "aws_apigatewayv2_api" "intake" {
-  name          = "${local.name_prefix}-api-${local.suffix}"
-  protocol_type = "HTTP"
+resource "aws_api_gateway_rest_api" "intake" {
+  name = "${local.name_prefix}-api-${local.suffix}"
+
+  endpoint_configuration {
+    types = ["REGIONAL"]
+  }
 }
 
-resource "aws_apigatewayv2_integration" "lambda" {
-  api_id                 = aws_apigatewayv2_api.intake.id
-  integration_type       = "AWS_PROXY"
-  integration_uri        = aws_lambda_function.intake.invoke_arn
-  integration_method     = "POST"
-  payload_format_version = "2.0"
+resource "aws_api_gateway_resource" "intake" {
+  rest_api_id = aws_api_gateway_rest_api.intake.id
+  parent_id   = aws_api_gateway_rest_api.intake.root_resource_id
+  path_part   = "intake"
 }
 
-resource "aws_apigatewayv2_route" "intake" {
-  api_id    = aws_apigatewayv2_api.intake.id
-  route_key = "POST /intake"
-  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+resource "aws_api_gateway_method" "intake" {
+  rest_api_id   = aws_api_gateway_rest_api.intake.id
+  resource_id   = aws_api_gateway_resource.intake.id
+  http_method   = "POST"
+  authorization = "NONE"
 }
 
-resource "aws_apigatewayv2_stage" "default" {
-  api_id      = aws_apigatewayv2_api.intake.id
-  name        = "$default"
-  auto_deploy = true
-  # GAP-08: no access_log_settings. Learner expected to wire CloudWatch logs.
+resource "aws_api_gateway_integration" "lambda" {
+  rest_api_id             = aws_api_gateway_rest_api.intake.id
+  resource_id             = aws_api_gateway_resource.intake.id
+  http_method             = aws_api_gateway_method.intake.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.intake.invoke_arn
+}
+
+resource "aws_api_gateway_deployment" "intake" {
+  rest_api_id = aws_api_gateway_rest_api.intake.id
+
+  triggers = {
+    redeployment = sha1(jsonencode({
+      path          = aws_api_gateway_resource.intake.path_part
+      method        = aws_api_gateway_method.intake.http_method
+      authorization = aws_api_gateway_method.intake.authorization
+      integration = {
+        type                    = aws_api_gateway_integration.lambda.type
+        integration_http_method = aws_api_gateway_integration.lambda.integration_http_method
+        uri                     = aws_api_gateway_integration.lambda.uri
+      }
+    }))
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_api_gateway_stage" "default" {
+  rest_api_id          = aws_api_gateway_rest_api.intake.id
+  deployment_id        = aws_api_gateway_deployment.intake.id
+  stage_name           = "prod"
+  xray_tracing_enabled = true
+
+  # Record request metadata without logging request or response bodies.
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.api_access.arn
+    format = jsonencode({
+      requestId      = "$context.requestId"
+      sourceIp       = "$context.identity.sourceIp"
+      requestTime    = "$context.requestTime"
+      httpMethod     = "$context.httpMethod"
+      resourcePath   = "$context.resourcePath"
+      status         = "$context.status"
+      responseLength = "$context.responseLength"
+    })
+  }
+
+  depends_on = [aws_api_gateway_account.logging]
 }
 
 resource "aws_lambda_permission" "apigw" {
@@ -245,5 +312,5 @@ resource "aws_lambda_permission" "apigw" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.intake.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_apigatewayv2_api.intake.execution_arn}/*/*"
+  source_arn    = "${aws_api_gateway_rest_api.intake.execution_arn}/prod/POST/intake"
 }

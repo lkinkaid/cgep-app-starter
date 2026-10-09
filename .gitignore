@@ -15,3 +15,10 @@ terraform/lambda/handler.zip
 # Local
 evidence/
 .DS_Store
+
+# Generated Terraform plan exports
+/terraform/plan.json
+/terraform/plan.txt
+
+# Local evidence bundles
+/evidence-*.tar.gz*
