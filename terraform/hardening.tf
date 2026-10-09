@@ -374,6 +374,7 @@ resource "aws_iam_role_policy_attachment" "api_logging" {
 resource "aws_api_gateway_account" "logging" {
   cloudwatch_role_arn = aws_iam_role.api_logging.arn
   depends_on          = [aws_iam_role_policy_attachment.api_logging]
+  reset_on_delete     = true
 }
 
 # Keep metrics and throttling enabled across the stage while disabling
