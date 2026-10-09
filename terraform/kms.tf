@@ -1,3 +1,6 @@
+# Step 1: Separate workload, evidence, and audit encryption keys
+# terraform/kms.tf
+
 ######################################################################
 # GAP-01 — Encrypt uploads with a customer-managed KMS key.
 ######################################################################
@@ -12,6 +15,7 @@ resource "aws_kms_key" "uploads" {
   tags = { Name = "${local.name_prefix}-uploads-${local.suffix}" }
 }
 
+# The alias aids operator discovery; encryption and IAM use the key ARN.
 resource "aws_kms_alias" "uploads" {
   name          = "alias/${local.name_prefix}-uploads-${local.suffix}"
   target_key_id = aws_kms_key.uploads.key_id
@@ -21,6 +25,9 @@ resource "aws_kms_alias" "uploads" {
 # GAP-02 — Customer-managed key for the submissions table.
 ######################################################################
 
+# Step 2: Encrypt submissions with a separate customer-managed key
+# GAP-02 / HIPAA 164.312(a)(2)(iv): DynamoDB and Lambda reference
+# this key through the table and service-constrained IAM permissions.
 resource "aws_kms_key" "intake" {
   description             = "Customer-managed encryption key for patient intake submissions"
   enable_key_rotation     = true
@@ -38,6 +45,9 @@ resource "aws_kms_alias" "intake" {
 # Capstone — Customer-managed key for the evidence vault.
 ######################################################################
 
+# Step 3: Encrypt signed evidence separately from workload data
+# Rotation is enabled and deletion has a 30-day waiting period. Encryption
+# complements the vault retention and signatures; it does not replace them.
 resource "aws_kms_key" "evidence" {
   description             = "Customer-managed encryption key for signed capstone evidence"
   enable_key_rotation     = true
@@ -55,6 +65,9 @@ resource "aws_kms_alias" "evidence" {
 ######################################################################
 # Capstone — Customer-managed key for cloudtrail
 ######################################################################
+# Step 4: Permit CloudTrail to encrypt this account trail
+# SourceArn and encryption context constrain GenerateDataKey to the trail.
+# In this key policy, Resource = "*" refers to the key carrying the policy.
 resource "aws_kms_key" "trail" {
   description             = "Customer-managed encryption key for CloudTrail logs"
   enable_key_rotation     = true

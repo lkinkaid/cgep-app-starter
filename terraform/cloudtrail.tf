@@ -1,14 +1,20 @@
+# Step 1: Prepare the management-audit destination
+# terraform/cloudtrail.tf
+
 locals {
   trail_name = "${var.project_name}-mgmt"
   trail_arn  = "arn:aws:cloudtrail:${var.aws_region}:${data.aws_caller_identity.current.account_id}:trail/${var.project_name}-mgmt"
 }
 
 
+# Store management audit records separately from signed CI evidence.
+# force_destroy supports sandbox teardown; this bucket has no Object Lock.
 resource "aws_s3_bucket" "trail" {
   bucket        = "${var.project_name}-cloudtrail-${local.suffix}"
   force_destroy = true
 }
 
+# Encrypt new audit objects with the CloudTrail CMK and block public access.
 resource "aws_s3_bucket_server_side_encryption_configuration" "trail" {
   bucket = aws_s3_bucket.trail.id
 
@@ -28,6 +34,9 @@ resource "aws_s3_bucket_public_access_block" "trail" {
   restrict_public_buckets = true
 }
 
+# Step 2: Allow only this trail to deliver account audit records
+# CloudTrail checks the bucket ACL and writes under AWSLogs/account-id.
+# SourceArn scopes delivery and the ACL condition preserves bucket ownership.
 data "aws_iam_policy_document" "trail" {
   statement {
     sid       = "AWSCloudTrailAclCheck"
@@ -71,6 +80,10 @@ resource "aws_s3_bucket_policy" "trail" {
   policy = data.aws_iam_policy_document.trail.json
 }
 
+# Step 3: Record management activity across regions and global services
+# Log-file validation supplies integrity digests. This trail does not
+# configure S3 object or DynamoDB item data-event selectors. Delivery
+# permissions and encryption must be ready before the trail is created.
 resource "aws_cloudtrail" "mgmt" {
   name                          = local.trail_name
   s3_bucket_name                = aws_s3_bucket.trail.id
