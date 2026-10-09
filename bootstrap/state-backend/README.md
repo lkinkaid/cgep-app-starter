@@ -65,9 +65,7 @@ requirements and all object-version retention periods are complete. Preserve
 any required CloudTrail logs with their key as well; Object Lock does not
 protect a decryption key from deletion.
 
-With AWS provider 5.x and `reset_on_delete` omitted, the regional API Gateway
-logging setting survives Terraform destruction. Check other REST APIs, then
-clear or replace that setting before deleting its logging role.
+The capstone currently sets reset_on_delete = true for the regional API Gateway account logging resource. Before teardown, check whether other REST APIs depend on that shared logging role and coordinate any replacement.
 
 The shared OIDC provider remains owned by the previous lab's OIDC stack.
 Retire it only after neither repository nor any other role needs it. The lab's
