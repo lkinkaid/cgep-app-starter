@@ -1,0 +1,141 @@
+{
+  "catalog": {
+    "uuid": "d2d187be-bcdc-4f54-894d-c469312d036c",
+    "metadata": {
+      "title": "Acme Health HIPAA Security Rule selected controls",
+      "last-modified": "2026-10-14T18:37:46+00:00",
+      "version": "1.0.0",
+      "oscal-version": "1.1.3",
+      "remarks": "Project-authored OSCAL subset of five HIPAA Security Rule provisions, with paraphrased statements and regulatory source links. This is not an official or complete HIPAA catalog.",
+      "links": [
+        {
+          "rel": "reference",
+          "href": "https://csrc.nist.gov/pubs/sp/800/66/r2/final",
+          "text": "NIST SP 800-66 Rev. 2 implementation guidance"
+        }
+      ]
+    },
+    "controls": [
+      {
+        "id": "hipaa-164-312-a-2-iv",
+        "title": "Encryption and decryption",
+        "props": [
+          {
+            "name": "hipaa-citation",
+            "ns": "https://github.com/lkinkaid/cgep-app-starter",
+            "value": "164.312(a)(2)(iv)"
+          }
+        ],
+        "links": [
+          {
+            "rel": "reference",
+            "href": "https://www.ecfr.gov/current/title-45/subtitle-A/subchapter-C/part-164/subpart-C/section-164.312#p-164.312(a)(2)(iv)",
+            "text": "Regulatory source"
+          }
+        ],
+        "parts": [
+          {
+            "name": "statement",
+            "prose": "Provide mechanisms to encrypt and decrypt electronic protected health information."
+          }
+        ]
+      },
+      {
+        "id": "hipaa-164-312-e-1",
+        "title": "Transmission security",
+        "props": [
+          {
+            "name": "hipaa-citation",
+            "ns": "https://github.com/lkinkaid/cgep-app-starter",
+            "value": "164.312(e)(1)"
+          }
+        ],
+        "links": [
+          {
+            "rel": "reference",
+            "href": "https://www.ecfr.gov/current/title-45/subtitle-A/subchapter-C/part-164/subpart-C/section-164.312#p-164.312(e)(1)",
+            "text": "Regulatory source"
+          }
+        ],
+        "parts": [
+          {
+            "name": "statement",
+            "prose": "Protect electronic protected health information against unauthorized access during network transmission."
+          }
+        ]
+      },
+      {
+        "id": "hipaa-164-308-a-7",
+        "title": "Contingency plan",
+        "props": [
+          {
+            "name": "hipaa-citation",
+            "ns": "https://github.com/lkinkaid/cgep-app-starter",
+            "value": "164.308(a)(7)"
+          }
+        ],
+        "links": [
+          {
+            "rel": "reference",
+            "href": "https://www.ecfr.gov/current/title-45/subtitle-A/subchapter-C/part-164/subpart-C/section-164.308#p-164.308(a)(7)",
+            "text": "Regulatory source"
+          }
+        ],
+        "parts": [
+          {
+            "name": "statement",
+            "prose": "Establish contingency procedures supporting backup, recovery, and continued protection of electronic protected health information during disruptions."
+          }
+        ]
+      },
+      {
+        "id": "hipaa-164-312-a-1",
+        "title": "Access control",
+        "props": [
+          {
+            "name": "hipaa-citation",
+            "ns": "https://github.com/lkinkaid/cgep-app-starter",
+            "value": "164.312(a)(1)"
+          }
+        ],
+        "links": [
+          {
+            "rel": "reference",
+            "href": "https://www.ecfr.gov/current/title-45/subtitle-A/subchapter-C/part-164/subpart-C/section-164.312#p-164.312(a)(1)",
+            "text": "Regulatory source"
+          }
+        ],
+        "parts": [
+          {
+            "name": "statement",
+            "prose": "Limit access to electronic protected health information to authorized people and software programs."
+          }
+        ]
+      },
+      {
+        "id": "hipaa-164-312-b",
+        "title": "Audit controls",
+        "props": [
+          {
+            "name": "hipaa-citation",
+            "ns": "https://github.com/lkinkaid/cgep-app-starter",
+            "value": "164.312(b)"
+          }
+        ],
+        "links": [
+          {
+            "rel": "reference",
+            "href": "https://www.ecfr.gov/current/title-45/subtitle-A/subchapter-C/part-164/subpart-C/section-164.312#p-164.312(b)",
+            "text": "Regulatory source"
+          }
+        ],
+        "parts": [
+          {
+            "name": "statement",
+            "prose": "Provide mechanisms to record and examine activity in information systems containing or using electronic protected health information."
+          }
+        ]
+      }
+    ]
+  }
+}
