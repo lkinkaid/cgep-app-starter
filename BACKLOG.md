@@ -1,6 +1,7 @@
 # Post-capstone stretch goals
 
-Address these after completing the capstone requirements, including Layer 4.
+Address the stretch goals below after completing the remaining capstone
+submission requirements.
 Keep the current Terraform remediations and the five required Rego policies in
 place. This backlog does not defer or remove the existing GAP-07 policy gate.
 
@@ -8,10 +9,13 @@ place. This backlog does not defer or remove the existing GAP-07 policy gate.
 
 Use the [capstone brief](https://github.com/GRCEngClub/cgep-labs/blob/main/guides/07_01_capstone_brief.md)
 and [companion](https://github.com/GRCEngClub/cgep-labs/blob/main/guides/07_02_capstone_companion.md)
-to guide the remaining work. Next, complete Layer 4: OSCAL component and profile
-content linked to the implemented controls, resource addresses, and signed
-evidence. Then finish the required writeup, README verification instructions,
-and submission checks. Preserve the working Layers 1–3 and their evidence.
+to guide the remaining work. Layer 4 is complete: the HIPAA catalog, profile,
+and component are validated and published on `main`, with mappings to implemented
+controls, resource addresses, and verified signed evidence. WRITEUP.md now records
+coverage, decisions, trade-offs, and AI assistance. The README now includes grader
+verification instructions. Remaining submission checks cover licensing/attribution,
+secret review, and the final commit and evidence verification.
+Preserve the working Layers 1–4 and their evidence.
 
 The bounded rubric improvements below are deferred until the capstone is
 complete. Required policy gating, branch protection, control mappings,
@@ -22,14 +26,32 @@ listing related enhancements here does not waive those requirements.
 
 These checks stay in the capstone scope and are not post-capstone stretch work.
 
-- [ ] Complete and validate the OSCAL component and profile, including control
-      mappings, resource addresses, and verified signed evidence references.
-- [ ] Finish the README verification instructions, WRITEUP, and AI transparency
-      disclosure; explain implementation decisions and remaining limitations.
+- [x] Complete and publish the HIPAA OSCAL catalog, component, and profile;
+      validate the models, resolve the profile, and check control mappings,
+      resource addresses, and signed evidence references (PR #9).
+- [x] Complete WRITEUP.md with the primary framework, gap coverage, design
+      decisions, a verified pipeline example, and remaining limitations.
+- [x] Update the README with the current project scope, this repository's clone
+      URL, prerequisites, and grader verification instructions for Terraform,
+      policies, OSCAL, and signed evidence. Replace stale starter deployment and
+      teardown guidance.
+- [x] Add an AI transparency disclosure describing assistance and verification
+      in WRITEUP.md.
 - [ ] Resolve repository licensing and retain applicable starter attribution
       before submission.
-- [ ] Verify required branch protection and review the repository and its
-      history for exposed secrets before submission.
+- [x] Verify required branch protection: changes require a pull request and
+      the `grc-gate` status check, including for administrators.
+- [ ] Review the repository and its history for exposed secrets before submission.
+- [ ] Record the final submission commit SHA and verify its successful main run
+      and signed evidence after the remaining documentation changes are merged.
+
+Layer 4 was published in [PR #9](https://github.com/lkinkaid/cgep-app-starter/pull/9)
+at commit `d1f5a0e012db09a4535073b5a0cdf01f6fdd8f71`.
+[Main run 39180939508](https://github.com/lkinkaid/cgep-app-starter/actions/runs/39180939508)
+completed Apply, Sign, and Upload successfully. Post-merge evidence verification
+reported Integrity, Authenticity, and Preservation PASS, with CHAIN INTACT.
+The checked evidence version has GOVERNANCE retention until
+`2026-11-18T00:29:28.709Z`.
 
 ## GAP-05: Network regression coverage
 
@@ -89,7 +111,8 @@ capstone delivery; the items above extend that work.
       original tag and retain both detected-drift and clean-state evidence.
 
 Current baseline: the existing gate runs on pull requests, pushes to `main`,
-and manual requests. Recurring drift detection is deferred until after Layer 4.
+and manual requests. Recurring drift detection is deferred until after capstone
+completion.
 This limits monitoring to Terraform-visible configuration; deferring it leaves
 the rubric continuous-monitoring and detection category partially addressed.
 
@@ -101,8 +124,8 @@ the rubric continuous-monitoring and detection category partially addressed.
       the full job logs.
 
 Current baseline: the workflow retains gate reports, signed bundles, and upload
-receipts. Required branch-protection verification remains a capstone completion
-check; enhanced summaries are deferred.
+receipts. Required pull-request and `grc-gate` branch protections have been
+verified; enhanced summaries are deferred.
 
 ## Engineering hygiene: Bootstrap ownership and validation
 
@@ -125,8 +148,7 @@ Current baseline: the capstone bootstrap configuration and lock files are
 committed on `main`. The state bucket and its four configuration resources
 were imported into the separate local bootstrap state on 2026-10-09; the
 follow-up plan reports no changes. Bootstrap CI validation remains deferred.
-Required secret exclusion, reproducibility, and AI transparency remain
-submission checks.
+Required secret exclusion and reproducibility remain submission checks.
 
 ## Control traceability: Reviewer aids
 
@@ -136,9 +158,10 @@ submission checks.
 - [ ] Consider generating that index from existing metadata to reduce manual
       maintenance after the capstone.
 
-Current baseline: policy metadata and Terraform comments provide traceability.
-Required OSCAL mappings and final documentation remain in the capstone scope;
-the supplemental index and its automation are deferred.
+Current baseline: policy metadata, Terraform comments, and the published Layer 4
+OSCAL mappings provide traceability to implemented controls and signed evidence.
+Final documentation remains in the capstone scope; the supplemental index and
+its automation are deferred.
 
 ## Security scanning: Checkov integration
 
@@ -156,7 +179,7 @@ the supplemental index and its automation are deferred.
 
 Current baseline: the workflow uses Terraform formatting and validation,
 TFLint, OPA/Conftest, and tfsec. Checkov integration is deferred until after
-Layer 4 and capstone completion.
+capstone completion.
 
 ## Infrastructure quality: Reusable Terraform modules
 
