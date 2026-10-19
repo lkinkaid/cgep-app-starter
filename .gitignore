@@ -15,6 +15,7 @@ terraform/lambda/handler.zip
 # Local
 evidence/
 .DS_Store
+.trestle-work/
 
 # Generated Terraform plan exports
 /terraform/plan.json
